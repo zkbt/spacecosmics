@@ -35,7 +35,6 @@ class Strategy(Talker):
         try:
           dir = os.path.join(dir, '{0:.0f}_{1:.0f}/'.format(self.timeseries.pixel[0], self.timeseries.pixel[1]))
           craftroom.utils.mkdir(dir)
-          print(dir)
         except:
           pass
         return dir
@@ -172,7 +171,6 @@ class Strategy(Talker):
 
               # create a new timeseries
               self.timeseries = Timeseries1D(nexposures=t.nexposures, nsubexposures=t.nsubexposures, amplitude=self.amplitudes[i])
-              print(self.timeseries.nsubexposures)
               # bin it, using the Strategy
               self.calculate(self.timeseries)
 
@@ -201,7 +199,7 @@ class Strategy(Talker):
 
         # setup the plots
         includeimage = self.timeseries.toy == False
-        self.figure = plt.figure(0, figsize=(9 + 3*includeimage,2), dpi=150)
+        self.figure = plt.figure(0, figsize=(9 + 3*includeimage,2), dpi=150);
         self.gs = plt.matplotlib.gridspec.GridSpec(1,6+includeimage,wspace=0,hspace=0,left=0.08, right=0.98, top=0.85, bottom=0.2)
         self.figure = plt.gcf()
         self.figure.clf()
@@ -274,7 +272,7 @@ class Strategy(Talker):
         self.ax['histbinned'].text(np.exp(span*0.8 + left), ylevel - ywidth*1.1, 'perfect', fontsize=4, color=self.plotting['nocosmics'], horizontalalignment='center', alpha=0.7)
 
         # draw and save the plot
-        plt.draw()
+        plt.show();
         plt.savefig(self.fileprefix() + '.pdf')
         print("saved plot to " +  self.fileprefix() + '.pdf')
 
@@ -314,9 +312,7 @@ class shiftedmedian(Strategy):
           # note, this wraps around to the start at the end of the array; but should work for testing
           reshapen = np.roll(self.timeseries.flux, i, 1).reshape(shape[0], shape[1]//self.n, self.n)
           sumofmedians += np.median(reshapen, 2)
-          #print reshapen[0,0,:]
-          #print reshapen[0,1,:]
-          #print
+
         return np.mean(sumofmedians/self.n, 1)
 
 
@@ -340,12 +336,6 @@ class sullivan(Strategy):
 
         diffs = np.array([np.abs(a-median), np.abs(b - median), np.abs(c -median), np.abs(d - median)])
         mask = diffs == np.min(diffs, 0).reshape(1,diffs.shape[1], diffs.shape[2])*np.ones_like(diffs)
-
-        print()
-        print(np.mean(mask[0,:,:]))
-        print(np.mean(mask[1,:,:]))
-        print(np.mean(mask[2,:,:]))
-        print(np.mean(mask[3,:,:]))
 
         values = np.array([a,b,c,d])
         partial = np.sum(mask*values,0)/np.sum(mask, 0)

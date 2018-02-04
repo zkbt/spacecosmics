@@ -26,7 +26,7 @@ def compare(nsubexposures=900, nexposures=1324, niterations=1, remake=False):
 		strategies = subsets[i]
 		names = []
 		results = {}
-		print(labels[i])
+		print("working on " + labels[i])
 		while(len(strategies)>0):
 			print("  {0:2} strategies to go!".format(len(strategies)))
 			s = strategies.pop()
@@ -53,7 +53,6 @@ def compare(nsubexposures=900, nexposures=1324, niterations=1, remake=False):
 				color = 'blue'
 				linestyle = shiftedlinestyle
 				shiftedlinestyle  += 1
-
 			if "Lowest" in k:
 				color = 'orange'
 				linestyle = lowestlinestyle
@@ -66,7 +65,6 @@ def compare(nsubexposures=900, nexposures=1324, niterations=1, remake=False):
 				color = 'red'
 				linestyle = outlierstyle
 				outlierstyle += 1
-			print(k)
 			n = np.float(results[k]['strategy'].n)
 			scale = 2
 			if "Mean" in k:
@@ -86,5 +84,5 @@ def compare(nsubexposures=900, nexposures=1324, niterations=1, remake=False):
 			ax.set_title('Cosmic Ray Rejection when Stacking {0} Exposures'.format(t.nsubexposures))
 			count +=1
 		plt.tight_layout()
-		plt.draw()
+		plt.show()
 		plt.savefig('comparingcosmics/cosmicrayrejectioncomparisons_{2:03.0f}iterations_{1:.0f}subexposures_{0}.pdf'.format(labels[i], t.nsubexposures, niterations))

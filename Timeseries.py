@@ -36,7 +36,7 @@ class Timeseries(Talker):
 		except AttributeError:
 			x = self.x
 		plt.plot(x.flatten(), self.flux.flatten(), linewidth=0, marker='.', alpha=0.3)
-		plt.show()
+		plt.show();
 
 	def __str__(self):
 		'''Summary of this object.'''
