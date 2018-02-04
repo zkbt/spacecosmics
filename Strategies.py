@@ -1,49 +1,53 @@
-from SPyFFI.imports import *
-from SPyFFI.Timeseries import Timeseries
+from imports import *
+from Timeseries import Timeseries1D
 
 class Strategy(Talker):
     '''Define structures and methods needed by all cosmic ray rejection strategies.'''
-    def __init__(self, n=None):
+    def __init__(self, n=5):
         '''Initialize Strategy object.'''
 
         # setup basic filtering parameters:
         self.name = 'Nothing'
-        if n is None:
-          self.n = 5
-        else:
-          self.n = n
 
-        self.prefix = ''
+        # most filters have a single scale (some have more)
+        self.n = n
 
         # define a dictionary of plotting parameters
         self.plotting = {'nsigma':10, 'toplot':96, 'flux':'mediumvioletred', 'nocosmics':'orange', 'naive':'blue'}
 
+    @property
+    def label(self):
+        '''A label for this strategy that can go into a filename.'''
+        return self.name.replace(' ', '')
+
+
     def directory(self):
         '''Define directory in which to store plots and files related to this Strategy.'''
         try:
-               self.workingDirectory = self.timeseries.cube.directory
+            self.workingDirectory = self.timeseries.cube.directory
         except:
-               self.workingDirectory = '/Users/zkbt/Cosmos/Data/TESS/CR/'
+            self.workingDirectory = 'comparingcosmics'
+            craftroom.utils.mkdir(self.workingDirectory)
 
-
-        dir = self.workingDirectory + self.name.replace(' ', '') + '/'
-        zachopy.utils.mkdir(dir)
+        dir = os.path.join(self.workingDirectory, self.label)
+        craftroom.utils.mkdir(dir)
 
         try:
-          dir = dir + '{0:.0f}_{1:.0f}/'.format(self.timeseries.pixel[0], self.timeseries.pixel[1])
-          zachopy.utils.mkdir(dir)
-          print dir
+          dir = os.path.join(dir, '{0:.0f}_{1:.0f}/'.format(self.timeseries.pixel[0], self.timeseries.pixel[1]))
+          craftroom.utils.mkdir(dir)
+          print(dir)
         except:
           pass
         return dir
 
     def fileprefix(self):
         '''Give the file prefix for this strategy.'''
-        f = self.directory() + 'crdemo_filter{0}_n{1}_cr{2}_{3}exposures'.format(self.name.replace(' ',''), self.n, self.timeseries.cosmicsamplitude/self.timeseries.exposurenoise, self.timeseries.nexposures)
+        f = os.path.join(self.directory(), 'crdemo_filter{0}_n{1}_cr{2}_{3}exposures'.format(self.label, self.n, self.timeseries.cosmicsamplitude, self.timeseries.nexposures))
         return f.replace('.', 'p')
 
+
     def strategyprefix(self):
-        f = self.directory() + 'crdemo_filter{0}_n{1}'.format(self.name.replace(' ',''), self.n, self.timeseries.nexposures)
+        f = os.path.join(self.directory(), 'crdemo_filter{0}_n{1}'.format(self.label, self.n, self.timeseries.nexposures))
         return f
 
     def calculate(self, timeseries):
@@ -119,7 +123,6 @@ class Strategy(Talker):
         # create a histogram of the lightcurve values
         yhist, edges = np.histogram(y, bins=np.arange(np.min(y)-self.binwidth, np.max(y)+self.binwidth, self.binwidth), density=True)
 
-
         # define the "x"-axis at the centers of the histogram bins
         xhist = (edges[1:] + edges[0:-1])/2.0
 
@@ -130,7 +133,6 @@ class Strategy(Talker):
 
         ax.set_xscale('log')
         ax.set_xlim(np.min(yhist)*0.5, np.max(yhist)*1.5)
-
 
     def plotimage(self, ax=plt.gca()):
         '''Display the image from which this light curve came, and indicate which pixel.'''
@@ -145,18 +147,17 @@ class Strategy(Talker):
         ax.plot(self.timeseries.pixel[0], self.timeseries.pixel[1],marker='o',markerfacecolor='None',markersize=10, alpha=0.5, markeredgecolor='gray')
         ax.text(self.timeseries.pixel[0], self.timeseries.pixel[1], '     {0}'.format(self.timeseries.pixel), horizontalalignment='left', verticalalignment='center', color='gray', alpha=0.5, weight='bold', size=4)
 
-
     def test(self, t, remake=False, niterations=20):
         '''Test Strategy over a range of input cosmic ray amplitudes (using toy model light curves).'''
         self.timeseries = t
-        print "testing {0}, with filename of {1}".format(self.name, self.strategyprefix())
+        print("testing {0}, with filename of {1}".format(self.name, self.strategyprefix()))
         filename = self.strategyprefix() + '_{0}iterations_{1:03.0f}subexposures.npy'.format(niterations, self.timeseries.nsubexposures)
         try:
           # can we load a preprocessed file?
           assert(remake == False)
-          print 'trying to load file from ', filename
+          print('trying to load file from ', filename)
           self.amplitudes, self.noise = np.load(filename)
-          print self.strategyprefix() + " loaded from file"
+          print(self.strategyprefix() + " loaded from file")
         except:
 
           # create a grid of relevant cosmic ray amplitudes
@@ -165,14 +166,13 @@ class Strategy(Talker):
 
           # loop over iterations, to improve precision of the noise estimates
           for iteration in np.arange(niterations):
-            print "  iteration #{0}/{1}".format(iteration, niterations)
+            print("  iteration #{0}/{1}".format(iteration, niterations))
             # loop over amplitudes
             for i in range(len(self.amplitudes)):
 
-
               # create a new timeseries
-              self.timeseries = Timeseries(nexposures=t.nexposures, nsubexposures=t.nsubexposures, amplitude=self.amplitudes[i])
-
+              self.timeseries = Timeseries1D(nexposures=t.nexposures, nsubexposures=t.nsubexposures, amplitude=self.amplitudes[i])
+              print(self.timeseries.nsubexposures)
               # bin it, using the Strategy
               self.calculate(self.timeseries)
 
@@ -181,7 +181,7 @@ class Strategy(Talker):
                 self.plot()
 
               # print this timeseries's summary
-              print self.prefix + "{0}".format(self.timeseries)
+              print(self.prefix + "{0}".format(self.timeseries))
 
               # store the achieve noise
               self.noise[i, iteration] = self.achieved/self.timeseries.exposurenoise
@@ -190,7 +190,7 @@ class Strategy(Talker):
 
           # save this calculation, so we can use again if need be
           np.save(filename, (self.amplitudes, self.noise))
-          print '   saved results to ', filename
+          print('   saved results to ', filename)
 
         # return (x, y) for plotting
         return self.amplitudes, self.noise
@@ -207,7 +207,7 @@ class Strategy(Talker):
         self.figure.clf()
         self.figure.suptitle("Cosmic Ray Rejection with [{0}]".format(self.name))
         self.ax = {}
-        self.ax['timeseries'] =    plt.subplot(self.gs[0,:-(1 + includeimage)])
+        self.ax['timeseries'] = plt.subplot(self.gs[0,:-(1 + includeimage)])
         self.ax['timeseries'].set_autoscale_on(False)
         self.ax['timeseries'].set_xlabel(r'Exposure #')
         self.ax['timeseries'].set_ylabel(r'Flux')
@@ -260,15 +260,15 @@ class Strategy(Talker):
           self.plotimage(ax=self.ax['image'])
 
         # labels describing the simulated timeseries
-        self.ax['timeseries'].text(self.plotting['toplot']*0.02, y, "{rate:0.2f} cosmic rays per exposure, at {amplitude:0.1f}X noise".format( amplitude=self.timeseries.cosmicsamplitude/self.timeseries.exposurenoise, rate=self.timeseries.cosmicsperexposure), fontsize=6, color=self.plotting['flux'], alpha=0.7, horizontalalignment='left')
+        self.ax['timeseries'].text(self.plotting['toplot']*0.02, y, "{rate:0.2f} cosmic rays per exposure, at {amplitude:0.1f}X noise".format( amplitude=self.timeseries.cosmicsamplitude, rate=self.timeseries.cosmicsperexposure), fontsize=6, color=self.plotting['flux'], alpha=0.7, horizontalalignment='left')
         self.ax['timeseries'].text(self.plotting['toplot']*0.98, y, "{nsubexposures} subexposures".format( nsubexposures=self.timeseries.nsubexposures), fontsize=6, color=self.plotting['flux'], alpha=0.7, horizontalalignment='right')
 
         # labels showing the unmitigated, achieved, and ideal noise values
         left, right = np.log(self.ax['histbinned'].get_xlim())
         span = right - left
-        self.ax['histbinned'].text(np.exp(span*0.2 + left), y, "{1:.2f}".format(self.timeseries.scale*self.unmititigated, self.unmititigated/self.timeseries.exposurenoise), fontsize=6, color=self.plotting['naive'], horizontalalignment='center', alpha=0.7)
-        self.ax['histbinned'].text(np.exp(span*0.5 + left), y, "{1:.2f}".format(self.timeseries.scale*self.achieved, self.achieved/self.timeseries.exposurenoise), fontsize=6, color=self.plotting['flux'], horizontalalignment='center', alpha=0.7)
-        self.ax['histbinned'].text(np.exp(span*0.78 + left), y, "{1:.2f}".format(self.timeseries.scale*self.timeseries.exposurenoise, 1.0), fontsize=6, color=self.plotting['nocosmics'], horizontalalignment='center', alpha=0.7)
+        self.ax['histbinned'].text(np.exp(span*0.2 + left), y, "{:.2f}".format(self.timeseries.scale*self.unmititigated/self.timeseries.exposurenoise), fontsize=6, color=self.plotting['naive'], horizontalalignment='center', alpha=0.7)
+        self.ax['histbinned'].text(np.exp(span*0.5 + left), y, "{:.2f}".format(self.timeseries.scale*self.achieved/self.timeseries.exposurenoise), fontsize=6, color=self.plotting['flux'], horizontalalignment='center', alpha=0.7)
+        self.ax['histbinned'].text(np.exp(span*0.78 + left), y, "{:.2f}".format(self.timeseries.scale), fontsize=6, color=self.plotting['nocosmics'], horizontalalignment='center', alpha=0.7)
         self.ax['histbinned'].text(np.exp(span*0.2 + left), ylevel - ywidth*1.1, 'unmitigated', fontsize=4, color=self.plotting['naive'], horizontalalignment='center', alpha=0.7)
         self.ax['histbinned'].text(np.exp(span*0.5 + left), ylevel - ywidth*1.1, 'achieved', fontsize=4, color=self.plotting['flux'], horizontalalignment='center', alpha=0.7)
         self.ax['histbinned'].text(np.exp(span*0.8 + left), ylevel - ywidth*1.1, 'perfect', fontsize=4, color=self.plotting['nocosmics'], horizontalalignment='center', alpha=0.7)
@@ -276,7 +276,7 @@ class Strategy(Talker):
         # draw and save the plot
         plt.draw()
         plt.savefig(self.fileprefix() + '.pdf')
-        print "saved plot to " +  self.fileprefix() + '.pdf'
+        print("saved plot to " +  self.fileprefix() + '.pdf')
 
 
 class mean(Strategy):
@@ -297,7 +297,7 @@ class median(Strategy):
 
     def filter(self):
         shape = self.timeseries.flux.shape
-        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]/self.n, self.n)
+        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]//self.n, self.n)
         partial = np.median(reshapen, 2)
         return np.mean(partial, 1)
 
@@ -309,10 +309,10 @@ class shiftedmedian(Strategy):
 
     def filter(self):
         shape = self.timeseries.flux.shape
-        sumofmedians = np.zeros((shape[0], shape[1]/self.n))
+        sumofmedians = np.zeros((shape[0], shape[1]//self.n))
         for i in range(self.n):
           # note, this wraps around to the start at the end of the array; but should work for testing
-          reshapen = np.roll(self.timeseries.flux, i, 1).reshape(shape[0], shape[1]/self.n, self.n)
+          reshapen = np.roll(self.timeseries.flux, i, 1).reshape(shape[0], shape[1]//self.n, self.n)
           sumofmedians += np.median(reshapen, 2)
           #print reshapen[0,0,:]
           #print reshapen[0,1,:]
@@ -331,7 +331,7 @@ class sullivan(Strategy):
 
     def filter(self):
         shape = self.timeseries.flux.shape
-        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]/self.n, self.n)
+        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]//self.n, self.n)
         median = np.median(reshapen, 2)
         d = np.sum(reshapen, 2)/3.
         a = (3*d - reshapen[:,:,0])/2.
@@ -341,11 +341,11 @@ class sullivan(Strategy):
         diffs = np.array([np.abs(a-median), np.abs(b - median), np.abs(c -median), np.abs(d - median)])
         mask = diffs == np.min(diffs, 0).reshape(1,diffs.shape[1], diffs.shape[2])*np.ones_like(diffs)
 
-        print
-        print np.mean(mask[0,:,:])
-        print np.mean(mask[1,:,:])
-        print np.mean(mask[2,:,:])
-        print np.mean(mask[3,:,:])
+        print()
+        print(np.mean(mask[0,:,:]))
+        print(np.mean(mask[1,:,:]))
+        print(np.mean(mask[2,:,:]))
+        print(np.mean(mask[3,:,:]))
 
         values = np.array([a,b,c,d])
         partial = np.sum(mask*values,0)/np.sum(mask, 0)
@@ -364,7 +364,7 @@ class lowest(Strategy):
     def filter(self):
         assert(self.m == self.n-1)
         shape = self.timeseries.flux.shape
-        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]/self.n, self.n)
+        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]//self.n, self.n)
         sum = np.sum(reshapen, 2)
         max = np.max(reshapen, 2)
         corrected = np.mean((sum - max)/self.m,1)
@@ -383,7 +383,7 @@ class central(Strategy):
     def filter(self):
         assert(self.m == self.n-2)
         shape = self.timeseries.flux.shape
-        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]/self.n, self.n)
+        reshapen = self.timeseries.flux.reshape(shape[0], shape[1]//self.n, self.n)
         sum = np.sum(reshapen, 2)
         max = np.max(reshapen, 2)
         min = np.min(reshapen, 2)
@@ -414,30 +414,15 @@ class outlierwithdecay(Strategy):
         # for testing, keep a diagnostics flag to say whether to display the mean + std. estimates
         self.diagnostics = diagnostics
 
-    def directory(self):
-        '''Define directory in which to store plots and files related to this Strategy.'''
-        try:
-          self.workingDirectory = self.timeseries.cube.directory
-        except:
-          self.workingDirectory = '/Users/zkbt/Cosmos/Data/TESS/CR/'
+    @property
+    def label(self):
+        return 'RejectionWith{0:.0f}percentMemory'.format(self.memory*100)
 
-        name = 'RejectionWith{0:.0f}percentMemory'.format(self.memory*100)
-
-        dir = self.workingDirectory + name.replace(' ', '') + '/'
-        zachopy.utils.mkdir(dir)
-
-        try:
-          dir = dir + '{0:.0f}_{1:.0f}/'.format(self.timeseries.pixel[0], self.timeseries.pixel[1])
-          zachopy.utils.mkdir(dir)
-          print dir
-        except:
-          pass
-        return dir
 
     def strategyprefix(self):
         '''Custom Strategy prefix for this long named Strategy.'''
         name = 'RejectionWith{0:.0f}percentMemory'.format(self.memory*100)
-        f = self.directory() + 'crdemo_filter{0}_n{1}'.format(name.replace(' ',''), self.n)
+        f = os.path.join(self.directory(), 'crdemo_filter{0}_n{1}'.format(name.replace(' ',''), self.n))
         return f
 
     def filter(self):
@@ -448,7 +433,7 @@ class outlierwithdecay(Strategy):
         assert(self.n > 3)
 
         # define the number of chunks (and other convenience constants)
-        nchunks = self.timeseries.nsubexposures/self.n
+        nchunks = self.timeseries.nsubexposures//self.n
         nsubexposures = self.timeseries.nsubexposures
         nexposures = self.timeseries.nexposures
         n = self.n
