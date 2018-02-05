@@ -1,22 +1,21 @@
 # get spyffi working!
 
-import SPyFFI.Cosmics as Cosmics
-import SPyFFI.settings as settings
-import craftroom.display
+import spyffi.Cosmics as Cosmics
 import matplotlib.pyplot as plt
+from craftroom.displays.ds9 import ds9
 import numpy as np
 
 def demoimages():
-    '''Create example images at three cadences.'''
+    '''Create example images of cosmic rays at three cadences.'''
 
-    d = craftroom.display.ds9('Image')
+    d = ds9('Image')
 
     for cadence in [2.0, 120.0, 1800.0]:
-        image = Cosmics.cosmicImage(exptime=cadence, size=512, rate=5.0, gradient=False, version='fancy', diffusion=False)
+        image = Cosmics.cosmicImage(exptime=cadence, size=512, rate=5.0, gradient=False, diffusion=True)
         d.one(image, clobber=cadence==2.0)
     print "fiddle with the images until you like them, and then save as example_cosmics.png"
 
-def histogram(remake=False, diffusion=False, n=10, size=4096, xpeak = 750, version='fancy'):
+def histogram(remake=False, diffusion=False, n=20, size=4096, xpeak = 800):
     '''Estimate the PDF of cosmic ray fluxes for pixels.'''
     plt.ion()
     gs = plt.matplotlib.gridspec.GridSpec(2,1,wspace=0, hspace=0.05)
@@ -43,7 +42,7 @@ def histogram(remake=False, diffusion=False, n=10, size=4096, xpeak = 750, versi
     def ccdf(y):
         return 1.0 - np.cumsum(y.astype(np.float))/np.sum(y)
 
-    filename=settings.dirs['intermediates']+'cosmics_histogram.npy'
+    filename='cosmics_histogram.npy'
     try:
         assert(remake == False)
         x, y = np.load(filename)
@@ -54,7 +53,7 @@ def histogram(remake=False, diffusion=False, n=10, size=4096, xpeak = 750, versi
 
 
         for count in range(n):
-            image = Cosmics.cosmicImage(exptime=2.0, size=size, rate=5.0, gradient=False, version=version, diffusion=diffusion)
+            image = Cosmics.cosmicImage(exptime=2.0, size=size, rate=5.0, gradient=False, diffusion=True)
             y, edges = np.histogram(image, bins=np.arange(2501))
             x = 0.5*(edges[:-1] + edges[1:])
             kw = dict(color='orange', alpha=0.1)
@@ -75,10 +74,10 @@ def histogram(remake=False, diffusion=False, n=10, size=4096, xpeak = 750, versi
         kw = dict(color='green', alpha=0.5)
         a.axvline(xpeak, linewidth=4, linestyle='--', **kw)
     ax[1].axhline(ccdf(y)[xpeak], linewidth=4,linestyle='--', **kw)
-    ax[1].text(1300, 4e-5, '{0:.4f} of pixels are hit by\nat least {1} electrons \nin a 2s subexposure'.format(ccdf(y)[xpeak],xpeak), weight='bold', va='top', ha='center', **kw)
+    ax[1].text(400, 4e-5, '{0:.4f} of pixels are hit by\nat least {1} electrons \nin a 2s subexposure'.format(ccdf(y)[xpeak],xpeak), size=6, weight='bold', va='top', ha='center', **kw)
     plt.draw()
     plt.savefig('histogram_of_cosmics.pdf')
-
+    plt.show()
 def test():
     image = Cosmics.cosmicImage(exptime=2.0, size=16, rate=5.0, gradient=False, version='fancy', diffusion=False)
     return image

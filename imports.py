@@ -12,5 +12,9 @@ import os, copy, subprocess, glob
 
 # general tools from my library
 import craftroom.utils
-
 from craftroom.Talker import Talker
+
+# make sure some directories exist to help out
+dirs = dict(plotting='plots', cosmics='comparingcosmics')
+for d in dirs.values():
+    craftroom.utils.mkdir(d)

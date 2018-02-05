@@ -131,7 +131,7 @@ class Strategy(Talker):
         ax.plot(yhist, xhist, **kwargs)
 
         ax.set_xscale('log')
-        ax.set_xlim(np.min(yhist)*0.5, np.max(yhist)*1.5)
+        ax.set_xlim(3, np.max(yhist)*1.5)
 
     def plotimage(self, ax=plt.gca()):
         '''Display the image from which this light curve came, and indicate which pixel.'''
