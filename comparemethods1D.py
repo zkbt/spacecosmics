@@ -18,7 +18,7 @@ def compare(nsubexposures=900, nexposures=1324, niterations=1, remake=False):
 				[mean(),shiftedmedian(n=3), shiftedmedian(n=4), shiftedmedian(n=5), shiftedmedian(n=6)],
 				[mean(),lowest(2), lowest(3), lowest(4), lowest(5),  lowest(10), lowest(20), lowest( 60)],
 				[mean(),central(3), central(5), central(10),central(20), central( 60)],
-				[mean(),  median(n=3), shiftedmedian(n=3), lowest(10),  central(10)]]#, outlierwithdecay(n=10,threshold=10, memory=0.5)]]
+				[mean(),  median(n=3), shiftedmedian(n=3), lowest(10),  central(10), outlierwithdecay(n=10,threshold=10, memory=0.5)]]
 	labels = ['mean', 'median', 'shiftedmedian', 'lowest', 'central',  'everything']
 
 	# loop over the groups
