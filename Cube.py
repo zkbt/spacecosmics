@@ -1,74 +1,105 @@
 '''Generate TESS pixel lightcurve cubes with dimensions (xpix)x(ypix)x(time).'''
 from imports import *
-import spyffi.Camera, Strategies, Stacker
+#from Strategies import *
+from Stacker import Central, Sum
+from SPyFFI.Observation import Observation, default
+from craftroom.displays.ds9 import ds9
 
-subexposurecadence = 2
+
+# create a default input dictionary
+cosmicinputs = default
+# give a label to this observation (that goes into the directory name)
+cosmicinputs['camera']['label'] = 'cube'
+
+# should we change the focus throughout the orbit?
+cosmicinputs['camera']['variablefocus'] = False
+cosmicinputs['jitter']['amplifyinterexposurejitter'] = 1.0
+
+# should we skip injecting cosmic rays? (False = *do* inject cosmics)
+cosmicinputs['expose']['skipcosmics'] = False
+
+# let's write the cosmic ray images out as separate files
+cosmicinputs['expose']['writecosmics'] = False
+cosmicinputs['expose']['writenoiseless'] = False
+cosmicinputs['expose']['writesimulated'] = False
+cosmicinputs['expose']['compress'] = {2: False, 20: False, 120: False, 1800: False}
+
+# what's the catalog ("testpattern" or "UCAC4")
+cosmicinputs['catalog']['name'] = 'testpattern'
+# should we randomize the magnitudes of the stars
+cosmicinputs['catalog']['testpatternkw']['randomizemagnitudes'] = True
+# what range of magnitudes should the stars span?
+cosmicinputs['catalog']['testpatternkw']['magnitudes'] = [10,10]
+
+
+
+
 class Cube(Talker):
 	'''Cube to handle simulated postage stamp pixel light curves;
 			has dimensions of (xpixels, ypixels, time).'''
 
-	def __init__(self, subject='test', size=32, n=900, cadence=2, jitter=False, stacker=dict(name='Sum'), **kwargs):
+	def __init__(self, subarray=42, n=15, cadence=120, subexposurecadence = 2, inputs=cosmicinputs, stacker=Central(10), **kwargs):
 		'''Initialize a cube object.
 
 		keyword arguments:
-		[subject='test'] the patch of the sky to paint, either a star name that can be queried by Vizier or "test" for a test pattern grid of stars
-		[size=32] the size of the image, in pixels
-		[n=900] the number of exposures to simulate
-		[cadence=2] the cadence of the simulated images, in seconds
-		[jitter=False] should jitter be included between images?'''
+		[inputs] = dictionary of inputs to a SPyFFI observation
+		[stacker] = a stacker object for combining images together
+		[**kwargs] = what happens to these?
+		'''
 
 		# decide whether or not this Cube is chatty
-		Talker.__init__(self, mute=False, pithy=False)
+		Talker.__init__(self)
 
-		# decide what to point the camera at...
-		self.subject = subject
-		if 'test' in self.subject.lower():
-			# ...either a test pattern of stars...
-			self.speak( 'pointing at a test pattern')
-			self.testpattern = True
-			self.ra, self.dec = 0, 0
-		else:
-			self.testpattern = False
-			# ...or a field centered on a particular star.
-			#try:
-			self.speak( "trying to point at {0}".format(subject))
-			s = zachopy.star.SingleStar(subject)
-			self.ra = s.icrs.ra.degree
-			self.dec = s.icrs.dec.degree
+		# keep track of the inputs
+		self.inputs = inputs
 
-			#except:
-			#	self.speak( " but that failed, so we'll go with a test pattern")
-			#	self.testpattern = True
+		self.inputs['observation']['cadencestodo'] = {cadence:n}
+		self.inputs['camera']['subarray'] = subarray
+		assert(subarray is not None)
+
+
+		for k in ['writesimulated', 'writenoiseless', 'writesimulated']:
+			self.inputs['expose'][k] = False
 
 		# keep track of which stacker is being used to create this image
 		self.stacker = stacker
 
+		# create an observation
+		self.cadence = cadence
+		self.observation = Observation(inputs)
+		self.camera = self.observation.camera
+		self.ccd = self.observation.camera.ccds[0]
 
 		# define basic geometry
-		self.size = size
+		self.size = subarray
 		self.xpixels = self.size
 		self.ypixels = self.size
-		self.jitter = jitter
 
 		# number of images and cadence
 		self.n = n
-		self.cadence = cadence
+		self.subexposurecadence = subexposurecadence
 		self.shape = (self.xpixels, self.ypixels, self.n)
 
-		# create a TESS camera and point it at the subject
-		self.camera = Camera(ra=self.ra, dec=self.dec, subarray=self.size, cadence=self.cadence, testpattern=self.testpattern)
-		self.camera.populateCatalog(name='testpattern', **kwargs)
-		self.camera.cartographer.pithy = True
 
-		# create a blank image with the camera
-		self.ccd = self.camera.ccds[0]
-		self.ccd.image = self.ccd.zeros()
+		# do we need to create a subcube of subexposures?
+		self.ninstack = np.round(self.cadence/self.subexposurecadence).astype(np.int)
+		if self.ninstack > 1:
+			self.subcube = Cube(subarray=self.size,
+								n=self.ninstack,
+								cadence=subexposurecadence,
+								inputs=self.inputs,
+								stacker=Sum())
+			self.subcube.camera.catalog = self.camera.catalog
+			self.camera.setCadence(subexposurecadence)
+
 
 		# create empty (xpixels, ypixels, n)
 		if self.cadence == 2:
 			bits = np.float32
 		else:
 			bits = np.float64
+
+		#
 		self.photons, self.cosmics, self.noiseless, self.unmitigated = np.zeros(self.shape).astype(bits), np.zeros(self.shape).astype(bits), np.zeros(self.shape).astype(bits), np.zeros(self.shape).astype(bits)
 
 		# create a dictionary to store a bunch of summaries
@@ -78,11 +109,69 @@ class Cube(Talker):
 		# self.simulate()
 		# self.plot()
 
-	def bin(self, nsubexposures=60, strategy=CR.Strategies.central(n=10), plot=False):
+	def __repr__(self):
+		return '<Cube | {} | {}s>'.format(self.shape, self.cadence)
+
+	def simulate(self):
+
+		# if we're using a "Sum" stacking strategy, then don't generate the individual 2-second frames
+		if (self.stacker.name == 'Sum') | (self.cadence == self.subexposurecadence):
+			# loop over (already stacked) exposures, creating them
+			for i in range(self.n):
+				self.speak('filling exposure #{0:.0f}/{1:.0f}'.format(i, self.n))
+				p, c, n = self.ccd.expose(**self.inputs['expose'])
+				self.photons[:,:,i], self.cosmics[:,:,i], self.noiseless[:,:,i] = p, c, n
+			self.unmitigated = self.photons
+
+			# store some useful accessory information about
+			self.background = self.ccd.backgroundimage
+			self.noise = self.ccd.noiseimage
+			self.catalog = self.camera.catalog
+		else:
+			# otherwise, we need to create the subcube
+			theWayToStack = self.stacker
+			self.speak('using {0} strategy to stack from 2-second images')
+			for i in range(self.n):
+				self.speak()
+				self.speak('creating a temporary stack of {0} images {1}s images'.format(self.ninstack, self.subexposurecadence))
+				self.subcube.simulate()
+				p, c, n, u = theWayToStack.stack(self.subcube, self.ninstack)
+				self.photons[:,:,i], self.cosmics[:,:,i], self.noiseless[:,:,i], self.unmitigated[:,:,i] = p, c, n, u
+
+			self.background = self.subcube.ccd.backgroundimage*self.ninstack
+			self.noise = self.subcube.ccd.noiseimage*np.sqrt(self.ninstack)
+			self.catalog = self.subcube.camera.catalog
+
+
+
+		'''
+        # set the cadence to this one
+        self.camera.setCadence(self.cadence)
+        np.save(os.path.join(self.camera.directory, 'observationdictionary.npy'), self.inputs)
+
+        # reset the counter
+        self.camera.counter = 0
+
+        c = self.camera.ccd
+
+
+        # expose this CCD, pulling out the images
+        self.camera.ccd.expose(advancecounter=False, **self.inputs['expose'])
+
+		self.photons, self.cosmics, self.noiseless, self.unmitigated
+
+		# advance the counter by hand
+        c.camera.advanceCounter()
+		'''
+
+
+
+	# is this necessary??????????
+	def bin(self, nsubexposures=60, strategy=Central(n=10), plot=False):
 		'''Bin together 2-second exposures, using some cosmic strategy.'''
 
 		# make sure that we're starting with a 2-second exposure
-		assert(self.cadence == subexposurecadence)
+		assert(self.cadence == self.subexposurecadence)
 
 		# create an empty binned cube object that has the right size and shape
 		binned = Cube(subject=self.subject, size=self.size, cadence=self.cadence*nsubexposures, n=(np.int(self.n/nsubexposures)) )
@@ -95,12 +184,12 @@ class Cube(Talker):
 		for x in np.arange(self.shape[0]):
 			for y in np.arange(self.shape[1]):
 				self.speak('   {x}, {y} out of ({size}, {size})'.format(x=x, y=y, size=self.size))
-				timeseries = CR.Strategies.timeseries(self, (x,y), nsubexposures=nsubexposures)
+				timeseries = Timeseries1D(self, (x,y), nsubexposures=nsubexposures)
 				strategy.calculate(timeseries)
 				if plot:
 					strategy.plot()
 				binned.photons[x,y] = strategy.binned['flux']
-				binned.cosmics[x,y] = strategy.binned['naive'] - strategy.binned['nocosmics']
+				binned.cosmicinputs[x,y] = strategy.binned['naive'] - strategy.binned['nocosmics']
 				binned.unmitigated[x,y] = strategy.binned['naive']
 		return binned
 
@@ -114,65 +203,22 @@ class Cube(Talker):
 		try:
 			self.ds9
 		except:
-			self.ds9 = zachopy.display.ds9(name)
+			self.ds9 = ds9(name)
 		self.ds9.many(cube, limit=limit)
 
 	@property
 	def directory(self):
 		'''Return path to a directory where this cube's data can be stored.'''
 		dir = self.ccd.directory + 'cubes/'
-		zachopy.utils.mkdir(dir)
+		craftroom.utils.mkdir(dir)
 		return dir
 
 	@property
 	def filename(self):
 		'''Return a filename for saving/loading this cube.'''
-		if self.jitter:
-			phrase = 'with'
-		else:
-			phrase = 'without'
-		return self.directory + 'cube_{n:.0f}exp_at{cadence:.0f}s_{phrase}jitter_{intrapixel}_{stacker}.npy'.format(n=self.n, cadence=self.cadence, phrase=phrase, intrapixel=self.camera.psf.intrapixel.name, stacker=Stacker.pick(self.stacker).name.replace(' ', ''))
 
-	def simulate(self, correctcosmics=False):
-		'''Use TESS simulator to paint stars (and noise and cosmic rays) into the image cube.'''
+		return self.directory + 'cube_{n:.0f}exp_at{cadence:.0f}s_{stacker}.npy'.format(n=self.n, cadence=self.cadence, stacker=self.stacker.name.replace(' ', ''))
 
-
-		# turn off display and some of the text output, to speed things up
-		self.ccd.display =0
-		self.camera.cartographer.pithy = False
-
-		# provide an update
-		self.speak('populating the {0} cube with {1:.0f}-second exposures'.format(self.shape, self.cadence))
-
-
-		# if we're using a "Sum" stacking strategy, then don't generate the individual 2-second frames
-		if (self.stacker['name'].lower() == 'sum') | (self.cadence == subexposurecadence):
-			# loop over (already stacked) exposures, creating them
-			for i in range(self.n):
-				self.speak('filling exposure #{0:.0f}/{1:.0f}'.format(i, self.n))
-
-				self.photons[:,:,i], self.cosmics[:,:,i], self.noiseless[:,:,i] = self.ccd.expose(jitter=self.jitter, write=False, smear=False, remake=i==0, terse=True, cosmics='fancy', correctcosmics=correctcosmics)
-			self.unmitigated = self.photons
-			# store some useful accessory information about
-			self.background = self.ccd.backgroundimage
-			self.noise = self.ccd.noiseimage
-			self.catalog = self.camera.catalog
-		else:
-			theWayToStack = Stacker.pick(self.stacker)
-			self.speak('using {0} strategy to stack from 2-second images')
-			ninstack = self.cadence/subexposurecadence
-			self.subcube = Cube(subject=self.subject, size=self.size, n=ninstack, cadence=subexposurecadence, jitter=self.jitter)
-			self.subcube.camera.catalog = self.camera.catalog
-			for i in range(self.n):
-				self.speak()
-				self.speak('creating a temporary stack of {0} images {1}s images'.format(ninstack, subexposurecadence))
-				self.subcube.simulate()
-
-				self.photons[:,:,i], self.cosmics[:,:,i], self.noiseless[:,:,i], self.unmitigated[:,:,i] = theWayToStack.stack(self.subcube, ninstack)
-
-			self.background = self.subcube.ccd.backgroundimage*ninstack
-			self.noise = self.subcube.ccd.noiseimage*np.sqrt(ninstack)
-			self.catalog = self.subcube.camera.catalog
 
 
 	def save(self):
@@ -265,7 +311,7 @@ class Cube(Talker):
 
 		# make a directory for the normalization used
 		dir = self.directory + normalization + '/'
-		zachopy.utils.mkdir(dir)
+		craftroom.utils.mkdir(dir)
 
 		if normalization == 'none':
 			flux = self.photons
@@ -277,6 +323,7 @@ class Cube(Talker):
 			# pick some kind of normalization for the image
 			image = flux[:,:,i]
 			self.ccd.writeToFITS(image, dir + normalization + '_{0:05.0f}.fits'.format(i))
+
 
 	def plot(self, normalization='none', ylim=None):
 
@@ -310,7 +357,8 @@ class Cube(Talker):
 
 		# create a plot
 		scale = 1.5
-		plt.figure('pixel timeseries', figsize = (np.minimum(self.xpixels*scale,10),np.minimum(self.ypixels*scale, 10)))
+		plt.figure('{} | normalization={}'.format(self, normalization),
+					figsize = (np.minimum(self.xpixels*scale,10),np.minimum(self.ypixels*scale, 10)), dpi=72)
 		gs = plt.matplotlib.gridspec.GridSpec(self.xpixels,self.ypixels, wspace=0, hspace=0)
 
 		# loop over pixels (in x and y directions)
