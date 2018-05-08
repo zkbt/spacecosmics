@@ -1,6 +1,16 @@
 from Cube import *
 from imports import *
+inputs = cosmicinputs
 
+a = Cube(subarray=128, n=5, cadence=120, hdus=True)
+a.simulate()
+#a.save()
+
+'''
+a = Cube(subarray=256, n=200, cadence=120)
+a.simulate()
+a.save()
+'''
 
 """
 # create a cube, using these inputs
@@ -15,6 +25,7 @@ for n in ['master']:
     b.subcube.plot(normalization=n)
     plt.savefig('normaljitter_{}.pdf'.format(n))
 """
+'''
 
 cosmicinputs['jitter']['amplifyinterexposurejitter'] = 1.0
 normal = Cube(subarray=6, n=1, cadence=120, inputs=cosmicinputs)
@@ -41,7 +52,7 @@ a.ds9.one((a.photons-a.noiseless)[:,:,0])
 c = Cube(subarray=100, n=3, cadence=120)
 c.load()
 
-
+'''
 
 
 #plt.ion()

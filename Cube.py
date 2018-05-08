@@ -38,7 +38,7 @@ class Cube(Talker):
 	'''Cube to handle simulated postage stamp pixel light curves;
 			has dimensions of (xpixels, ypixels, time).'''
 
-	def __init__(self, subarray=42, n=15, cadence=120, subexposurecadence = 2, inputs=cosmicinputs, stacker=Central(10), **kwargs):
+	def __init__(self, subarray=42, n=15, cadence=120, subexposurecadence = 2, inputs=cosmicinputs, stacker=Central(10), hdu=False, **kwargs):
 		'''Initialize a cube object.
 
 		keyword arguments:
@@ -57,6 +57,9 @@ class Cube(Talker):
 		self.inputs['camera']['subarray'] = subarray
 		assert(subarray is not None)
 
+		self.hdu = hdu
+		if self.hdu:
+			self.inputs['expose']['returnhdu'] = True
 
 		for k in ['writesimulated', 'writenoiseless', 'writesimulated']:
 			self.inputs['expose'][k] = False
@@ -105,6 +108,8 @@ class Cube(Talker):
 		# create a dictionary to store a bunch of summaries
 		self.summaries = {}
 
+
+
 		# populate the cube with simulated pixel data
 		# self.simulate()
 		# self.plot()
@@ -114,6 +119,9 @@ class Cube(Talker):
 
 	def simulate(self):
 
+		if self.hdu:
+			self.imagehdus, self.cosmicshdus, self.noiselesshdus = [], [], []
+
 		# if we're using a "Sum" stacking strategy, then don't generate the individual 2-second frames
 		if (self.stacker.name == 'Sum') | (self.cadence == self.subexposurecadence):
 			# loop over (already stacked) exposures, creating them
@@ -121,6 +129,10 @@ class Cube(Talker):
 				self.speak('filling exposure #{0:.0f}/{1:.0f}'.format(i, self.n))
 				p, c, n = self.ccd.expose(**self.inputs['expose'])
 				self.photons[:,:,i], self.cosmics[:,:,i], self.noiseless[:,:,i] = p, c, n
+				if self.hdu:
+					self.imagehdus.append(self.ccd.hduimage)
+					self.cosmicshdus.append(self.ccd.hducosmic)
+					self.noiselesshdus.append(self.ccd.hdunoiseless)
 			self.unmitigated = self.photons
 
 			# store some useful accessory information about
@@ -137,10 +149,14 @@ class Cube(Talker):
 				self.subcube.simulate()
 				p, c, n, u = theWayToStack.stack(self.subcube, self.ninstack)
 				self.photons[:,:,i], self.cosmics[:,:,i], self.noiseless[:,:,i], self.unmitigated[:,:,i] = p, c, n, u
-
+				if self.hdu:
+					self.imagehdus.append(self.ccd.hduimage)
+					self.cosmicshdus.append(self.ccd.hducosmic)
+					self.noiselesshdus.append(self.ccd.hdunoiseless)
 			self.background = self.subcube.ccd.backgroundimage*self.ninstack
 			self.noise = self.subcube.ccd.noiseimage*np.sqrt(self.ninstack)
 			self.catalog = self.subcube.camera.catalog
+
 
 
 

@@ -1,12 +1,7 @@
 # this sets where to look for inputs and store outputs
 # (it will default to `~/.tess/spyffi` if the $SPYFFIDATA environment variable isn't set)
 import os
-os.environ["SPYFFIDATA"] = '/Volumes/dandelion/Cosmos/Data/TESS/FFIs'
-
-
-# this makes sure that updates are actually printed to the terminal (instead of just to a log)
-import logging
-logging.basicConfig(level="INFO")
+os.environ["SPYFFIDATA"] = '/Users/zkbt/Cosmos/Data/TESS/FFIs'
 
 
 
